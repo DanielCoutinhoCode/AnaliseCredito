@@ -55,14 +55,23 @@ class GeradorRelatorioPDF:
 
     def _escrever_tabela_pdf(self, pdf, df_dados, col_widths, text_align):
         pdf.set_font("Helvetica", size=10)
-        estilo_cabecalho_tabela = FontFace(emphasis="BOLD")
+        estilo_cabecalho_tabela = FontFace(emphasis="BOLD", align="CENTER")
+        
+        table_style = {
+            "width": pdf.epw,
+            "align": "CENTER",
+            "line_height": 1.5,
+            "text_align": "CENTER"
+        }
         
         with pdf.table(
             col_widths=col_widths,
-            text_align="CENTER",
+            width=table_style["width"],
+            align=table_style["align"],
             first_row_as_headings=True,
             headings_style=estilo_cabecalho_tabela,
-            line_height=1.5
+            line_height=table_style["line_height"],
+            text_align=table_style["text_align"]
         ) as tabela:
             # Write header
             row = tabela.row()
@@ -73,12 +82,14 @@ class GeradorRelatorioPDF:
             for linha in df_dados[1:]:
                 row = tabela.row()
                 for valor in linha:
-                    # Format percentage values
-                    if isinstance(valor, float) and any(perc in str(valor) for perc in self.perc_traduzidos):
-                        valor = f"{valor:.2%}"
-                    elif isinstance(valor, float):
-                        valor = f"{valor:.2f}"
+                    if isinstance(valor, float):
+                        if any(perc in str(valor) for perc in self.perc_traduzidos):
+                            valor = f"{valor:.2%}"
+                        else:
+                            valor = f"{valor:.2f}"
                     row.cell(str(valor))
+
+        pdf.ln(5)  # Add some space after the table
 
     def gerar_relatorio(self, ticker_alvo, ano, resultado_rating, lista_alertas, df_comparativo, df_completo_t):
         """
