@@ -61,10 +61,19 @@ class GeradorRelatorioPDF:
             col_widths=col_widths,
             text_align=text_align,
             first_row_as_headings=True,
-            headings_style=estilo_cabecalho_tabela
+            headings_style=estilo_cabecalho_tabela,
+            line_height=1.5
         ) as tabela:
-            for linha in df_dados:
-                tabela.row(linha)
+            # Add header row
+            row = tabela.row()
+            for cell in df_dados[0]:
+                row.cell(cell, align="CENTER")
+            
+            # Add data rows
+            for linha in df_dados[1:]:
+                row = tabela.row()
+                for cell in linha:
+                    row.cell(str(cell), align="CENTER", middle=True)
 
     def gerar_relatorio(self, ticker_alvo, ano, resultado_rating, lista_alertas, df_comparativo, df_completo_t):
         """
