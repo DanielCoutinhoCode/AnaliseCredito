@@ -8,9 +8,10 @@ from coleta_dados import ColetorDadosCVM
 
 class CalculadoraIndicadores:
     """
-    OTIMIZAÇÃO 4 (Nuvem / Baixa Memória): 
-    Esta classe agora lê os CSVs de dentro do ZIP em "chunks" (pedaços)
-    para evitar carregar arquivos gigantes na RAM.
+    OTIMIZAÇÃO FINAL (Deploy): 
+    Lê dados de dentro do ZIP (para poupar espaço) e
+    IGNORA MAIÚSCULAS/MINÚSCULAS nos nomes dos arquivos
+    (para funcionar no Linux/Streamlit Cloud).
     """
     
     def __init__(self, coletor: ColetorDadosCVM):
@@ -18,9 +19,12 @@ class CalculadoraIndicadores:
         self.MAPA_CONTAS = config.MAPA_CONTAS_CVM
         self.coletor = coletor
         
-        print(f"CalculadoraIndicadores iniciada (Modo Baixa Memória).")
+        print(f"CalculadoraIndicadores iniciada (Modo Baixa Memória, Case-Insensitive).")
         
     def pegar_valor_conta(self, df_filtrado, cd_conta):
+        """
+        Método auxiliar (não muda)
+        """
         try:
             valor = df_filtrado.loc[df_filtrado['CD_CONTA'] == cd_conta, 'VL_CONTA'].iloc[0]
             return valor
@@ -29,13 +33,31 @@ class CalculadoraIndicadores:
         except Exception as e:
             raise RuntimeError(f"Erro inesperado ao buscar conta {cd_conta}: {e}")
 
+    # --- NOVO MÉTODO HELPER (PARA IGNORAR O CASE) ---
+    def _encontrar_nome_arquivo_no_zip(self, zf, sufixo_arquivo_lower):
+        """
+        Encontra um arquivo no ZIP ignorando o "case" (maiúsculas/minúsculas).
+        Ex: sufixo_arquivo_lower = 'dre_con_2024.csv'
+        Encontra: 'dfp_cia_aberta_DRE_CON_2024.CSV'
+        """
+        nomes_no_zip = zf.namelist()
+        
+        for nome_real_no_zip in nomes_no_zip:
+            # Compara ambos os nomes em minúsculas
+            if nome_real_no_zip.lower().endswith(sufixo_arquivo_lower):
+                return nome_real_no_zip # Encontrou! Retorna o nome com o case correto
+        
+        # Se não encontrou
+        raise FileNotFoundError(f"Arquivo terminando em '{sufixo_arquivo_lower}' não encontrado no ZIP.")
+    # --- FIM DO NOVO MÉTODO ---
+
+    # --- MÉTODO _ler_dados_do_zip (ATUALIZADO) ---
     def _ler_dados_do_zip(self, ano, cnpj, tipo_doc="DFP"):
         """
-        Lógica de leitura de baixa memória:
+        Lógica de leitura robusta:
         1. Garante que o ZIP do ano existe (baixa se necessário).
-        2. Tenta ler os 3 arquivos (DRE, BPA, BPP) em PEDAÇOS (chunks) de dentro do ZIP,
-           filtrando pelo CNPJ e 'ÚLTIMO' exercício.
-        3. Tenta o fallback de CONSOLIDADO para INDIVIDUAL.
+        2. Tenta ler os 3 arquivos CONSOLIDADOS (ignorando o case).
+        3. Se falhar, tenta ler os 3 arquivos INDIVIDUAIS (ignorando o case).
         """
         
         if not self.coletor.baixar_demonstrativos(ano, tipo_doc):
@@ -50,71 +72,58 @@ class CalculadoraIndicadores:
             print(f"ERRO: Não foi possível abrir o arquivo ZIP: {e}")
             return None, None, None, None
             
-        arquivos_por_tipo = {
-            "CONSOLIDADO": {
-                'dre': f"{tipo_doc.lower()}_cia_aberta_dre_con_{ano}.csv",
-                'bpa': f"{tipo_doc.lower()}_cia_aberta_bpa_con_{ano}.csv",
-                'bpp': f"{tipo_doc.lower()}_cia_aberta_bpp_con_{ano}.csv"
-            },
-            "INDIVIDUAL": {
-                'dre': f"{tipo_doc.lower()}_cia_aberta_dre_ind_{ano}.csv",
-                'bpa': f"{tipo_doc.lower()}_cia_aberta_bpa_ind_{ano}.csv",
-                'bpp': f"{tipo_doc.lower()}_cia_aberta_bpp_ind_{ano}.csv"
-            }
-        }
+        filtro_cnpj = lambda df, c: df['CNPJ_CIA'] == c
+        filtro_exercicio = lambda df: df['ORDEM_EXERC'] == 'ÚLTIMO'
 
         dre_df, bpa_df, bpp_df = None, None, None
         tipo_dados_usados = None
         
+        # Loop de Tentativa (primeiro CON, depois IND)
         for tipo_tentativa in ["CONSOLIDADO", "INDIVIDUAL"]:
             
             if tipo_tentativa == "INDIVIDUAL":
                 print(f"INFO: Dados CONSOLIDADOS não encontrados para {cnpj} no ano {ano}. Tentando INDIVIDUAIS...")
                 
-            nomes_arquivos = arquivos_por_tipo[tipo_tentativa]
+            # Define os sufixos (em minúsculas) que queremos encontrar
+            sufixos_arquivos = {
+                'dre': f"dre_{'con' if tipo_tentativa == 'CONSOLIDADO' else 'ind'}_{ano}.csv",
+                'bpa': f"bpa_{'con' if tipo_tentativa == 'CONSOLIDADO' else 'ind'}_{ano}.csv",
+                'bpp': f"bpp_{'con' if tipo_tentativa == 'CONSOLIDADO' else 'ind'}_{ano}.csv"
+            }
             
             try:
-                dfs_filtrados = {}
-                for tipo_arq, nome_arq in nomes_arquivos.items():
-                    chunks_filtrados = []
-                    
-                    # Garantir que o arquivo (ex: _ind_) existe dentro do ZIP
-                    if nome_arq not in zf.namelist():
-                         raise FileNotFoundError(f"Arquivo {nome_arq} não existe dentro do ZIP.")
-                    
-                    with zf.open(nome_arq) as f:
-                        with pd.read_csv(f, sep=';', encoding='latin1', chunksize=50000, dtype={'CNPJ_CIA': str}) as reader:
-                            for chunk in reader:
-                                chunk_filtrado = chunk[
-                                    (chunk['CNPJ_CIA'] == cnpj) & 
-                                    (chunk['ORDEM_EXERC'] == 'ÚLTIMO')
-                                ].copy()
-                                
-                                if not chunk_filtrado.empty:
-                                    chunks_filtrados.append(chunk_filtrado)
-                    
-                    if not chunks_filtrados:
-                        raise FileNotFoundError(f"Dados não encontrados para {cnpj} em {nome_arq}")
-                        
-                    dfs_filtrados[tipo_arq] = pd.concat(chunks_filtrados)
+                # 1. Encontrar os nomes corretos (ignorando o case)
+                nome_real_dre = self._encontrar_nome_arquivo_no_zip(zf, sufixos_arquivos['dre'])
+                nome_real_bpa = self._encontrar_nome_arquivo_no_zip(zf, sufixos_arquivos['bpa'])
+                nome_real_bpp = self._encontrar_nome_arquivo_no_zip(zf, sufixos_arquivos['bpp'])
 
-                dre_df = dfs_filtrados['dre']
-                bpa_df = dfs_filtrados['bpa']
-                bpp_df = dfs_filtrados['bpp']
-                tipo_dados_usados = tipo_tentativa
+                # 2. Ler os arquivos (sem "chunks", para manter a RAM baixa, mas não tão lento)
+                df_dre = pd.read_csv(zf.open(nome_real_dre), sep=';', encoding='latin1', dtype={'CNPJ_CIA': str})
+                df_bpa = pd.read_csv(zf.open(nome_real_bpa), sep=';', encoding='latin1', dtype={'CNPJ_CIA': str})
+                df_bpp = pd.read_csv(zf.open(nome_real_bpp), sep=';', encoding='latin1', dtype={'CNPJ_CIA': str})
+
+                # 3. Filtrar
+                dre_df_filtrado = df_dre[filtro_cnpj(df_dre, cnpj) & filtro_exercicio(df_dre)].copy()
+                bpa_df_filtrado = df_bpa[filtro_cnpj(df_bpa, cnpj) & filtro_exercicio(df_bpa)].copy()
+                bpp_df_filtrado = df_bpp[filtro_cnpj(df_bpp, cnpj) & filtro_exercicio(df_bpp)].copy()
                 
-                break 
-                
+                if not dre_df_filtrado.empty and not bpa_df_filtrado.empty and not bpp_df_filtrado.empty:
+                    dre_df, bpa_df, bpp_df = dre_df_filtrado, bpa_df_filtrado, bpp_df_filtrado
+                    tipo_dados_usados = tipo_tentativa
+                    break # Sucesso!
+                        
             except Exception as e:
+                # (Falha normal se o _con_ não existir, ou _ind_ não existir)
                 # print(f"DEBUG: Falha ao tentar {tipo_tentativa}: {e}")
                 pass 
 
         zf.close() 
         return dre_df, bpa_df, bpp_df, tipo_dados_usados
+    # --- FIM DO MÉTODO ---
 
     def calcular_indicadores_empresa(self, cnpj, ano):
         """
-        Método PRINCIPAL. Agora lê direto do ZIP (em chunks).
+        Método PRINCIPAL. Agora lê direto do ZIP (case-insensitive).
         """
         
         dre_df, bpa_df, bpp_df, tipo_dados_usados = self._ler_dados_do_zip(ano, cnpj)
