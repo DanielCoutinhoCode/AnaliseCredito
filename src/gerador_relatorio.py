@@ -53,23 +53,39 @@ class GeradorRelatorioPDF:
             return None, None, None
 
     # --- VERSÃO CORRIGIDA E SIMPLIFICADA (A QUE FUNCIONA) ---
+    # (Substitua a sua função _escrever_tabela_pdf por esta)
     def _escrever_tabela_pdf(self, pdf, df_dados, col_widths, text_align):
         """
-        Método auxiliar SIMPLES para desenhar uma tabela de DataFrame no PDF.
-        Ele confia nos argumentos 'col_widths' e 'text_align' passados.
+        Método auxiliar para desenhar uma tabela, forçando o alinhamento
+        de cada célula manualmente, pois 'text_align' está a ser ignorado.
         """
         pdf.set_font("Helvetica", size=10)
         estilo_cabecalho_tabela = FontFace(emphasis="BOLD")
         
         with pdf.table(
             col_widths=col_widths,
-            text_align=text_align, # Passa o tuple de alinhamentos (ex: "LEFT", "CENTER")
+            # (Removemos o text_align daqui, pois vamos fazê-lo manualmente)
             first_row_as_headings=True,
             headings_style=estilo_cabecalho_tabela
         ) as tabela:
-            # Não fazemos loop manual, apenas damos os dados
-            for linha in df_dados:
-                tabela.row(linha)
+            
+            # Iteramos sobre os dados (que é uma lista de listas)
+            for i, linha_dados in enumerate(df_dados):
+                # Criamos a linha no PDF
+                linha_pdf = tabela.row(linha_dados)
+                
+                # Agora, iteramos sobre cada CÉLULA dessa linha
+                for j, celula in enumerate(linha_pdf.cells):
+                    # 'j' é o índice da coluna (0, 1, 2...)
+                    # Usamos o 'text_align' (o tuplo que passámos)
+                    # para definir o alinhamento de cada célula
+                    
+                    # (text_align[j] será "LEFT" para a coluna 0, 
+                    # e "CENTER" para as colunas 1, 2, 3...)
+                    celula.align = text_align[j].upper() 
+                    
+        # Esta abordagem é mais explícita e deve sobrepor-se
+        # a qualquer padrão interno da biblioteca.
     # --- FIM DA CORREÇÃO ---
 
     def gerar_relatorio(self, ticker_alvo, ano, resultado_rating, lista_alertas, df_comparativo, df_completo_t):
