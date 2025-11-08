@@ -32,7 +32,6 @@ class GeradorRelatorioPDF:
         print(f"GeradorRelatorioPDF iniciado. Pasta de saída: {self.diretorio_relatorios_pdf}")
 
     def _ler_dados_relatorio(self, ticker_alvo, ano):
-        # (Este método está correto e otimizado)
         ticker_alvo_upper = ticker_alvo.upper()
         nome_completo = f"relatorio_pares_{ticker_alvo_upper}_{ano}_completo.csv"
         nome_comparativo = f"relatorio_pares_{ticker_alvo_upper}_{ano}_comparativo.csv"
@@ -53,52 +52,27 @@ class GeradorRelatorioPDF:
             print(f"ERRO ao ler arquivos CSV (verifique 'analise_setorial.py'): {e}")
             return None, None, None
 
+    # --- VERSÃO CORRIGIDA E SIMPLIFICADA (A QUE FUNCIONA) ---
     def _escrever_tabela_pdf(self, pdf, df_dados, col_widths, text_align):
+        """
+        Método auxiliar SIMPLES para desenhar uma tabela de DataFrame no PDF.
+        Ele confia nos argumentos 'col_widths' e 'text_align' passados.
+        """
         pdf.set_font("Helvetica", size=10)
         estilo_cabecalho_tabela = FontFace(emphasis="BOLD")
         
-        # Calculate total width and center position
-        total_width = sum(col_widths)
-        margin_left = (pdf.epw - total_width) / 2
-
-        pdf.set_x(margin_left)
-        
         with pdf.table(
             col_widths=col_widths,
-            line_height=6,
-            text_align="CENTER",
+            text_align=text_align, # Passa o tuple de alinhamentos (ex: "LEFT", "CENTER")
             first_row_as_headings=True,
             headings_style=estilo_cabecalho_tabela
         ) as tabela:
-            # Write header
-            row = tabela.row()
-            for coluna in df_dados[0]:
-                cell = row.cell(str(coluna))
-                cell.text_align = "CENTER"
-                cell.vertical_align = "MIDDLE"
-            
-            # Write data rows
-            for linha in df_dados[1:]:
-                row = tabela.row()
-                for valor in linha:
-                    if isinstance(valor, float):
-                        if any(perc in str(valor) for perc in self.perc_traduzidos):
-                            texto = f"{valor:.2%}"
-                        else:
-                            texto = f"{valor:.2f}"
-                    else:
-                        texto = str(valor)
-                        
-                    cell = row.cell(texto)
-                    cell.text_align = "CENTER"
-                    cell.vertical_align = "MIDDLE"
-                    
-        pdf.ln(5)  # Add spacing after table
+            # Não fazemos loop manual, apenas damos os dados
+            for linha in df_dados:
+                tabela.row(linha)
+    # --- FIM DA CORREÇÃO ---
 
     def gerar_relatorio(self, ticker_alvo, ano, resultado_rating, lista_alertas, df_comparativo, df_completo_t):
-        """
-        Método PRINCIPAL. Orquestra a criação do PDF.
-        """
         
         print(f"Iniciando geração de PDF para {ticker_alvo} ({ano})...")
         
@@ -106,7 +80,6 @@ class GeradorRelatorioPDF:
         pdf.add_page()
         
         # --- Secções 2, 3, 4, 5 (Títulos, Rating, Alertas) ---
-        # (Estas secções estão corretas e não mudam)
         pdf.set_font("Helvetica", 'B', 16)
         pdf.cell(0, 10, f"Relatório de Análise de Crédito", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
         pdf.set_font("Helvetica", 'B', 14)
@@ -155,12 +128,14 @@ class GeradorRelatorioPDF:
                 else:
                     linha_formatada.append(f"{val:.2f}")
             dados_tabela_comp.append(linha_formatada)
+        
+        # O alinhamento "CENTER" está aqui:
         self._escrever_tabela_pdf(pdf, dados_tabela_comp, 
                                  col_widths=(60, 65, 65), 
                                  text_align=("LEFT", "CENTER", "CENTER"))
         pdf.ln(10)
 
-        # --- Seção 9 (Tabela Completa) - CORRIGIDA ---
+        # --- Seção 9 (Tabela Completa) ---
         pdf.set_font("Helvetica", 'B', 12)
         pdf.cell(0, 7, "Indicadores Detalhados (Todos os Pares):", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
         pdf.ln(2)
@@ -177,34 +152,25 @@ class GeradorRelatorioPDF:
             dados_tabela_completa.append(linha_formatada)
         
         # --- LÓGICA DE LARGURA DINÂMICA ---
-        # 1. Contar o número total de colunas
-        num_colunas = len(dados_tabela_completa[0]) # (ex: 1 + 8 = 9 colunas)
-        
-        # 2. Definir a largura da primeira coluna (Nomes)
-        largura_primeira_coluna = 50 # 50mm para o nome
-        
-        # 3. Calcular a largura restante para as colunas de dados
-        largura_pagina_util = 190 # (210mm - 20mm de margens)
+        num_colunas = len(dados_tabela_completa[0])
+        largura_primeira_coluna = 50 
+        largura_pagina_util = 190 
         largura_restante = largura_pagina_util - largura_primeira_coluna
         num_colunas_dados = num_colunas - 1
         
-        # 4. Calcular a largura de cada coluna de dados
-        # (Se for 0, definir um padrão para evitar divisão por zero)
         if num_colunas_dados > 0:
             largura_coluna_dados = largura_restante / num_colunas_dados
         else:
             largura_coluna_dados = largura_restante
             
-        # 5. Criar as listas de 'col_widths' e 'text_align' dinamicamente
         col_widths = [largura_primeira_coluna] + [largura_coluna_dados] * num_colunas_dados
+        
+        # O alinhamento "CENTER" está aqui:
         text_align = ["LEFT"] + ["CENTER"] * num_colunas_dados
         
-        # (Se houver muitas colunas, o texto do cabeçalho pode quebrar, 
-        # mas o PDF não vai mais "crashar")
-        
         self._escrever_tabela_pdf(pdf, dados_tabela_completa,
-                                  col_widths=tuple(col_widths), # Converte lista para tuplo
-                                  text_align=tuple(text_align)) # Converte lista para tuplo
+                                  col_widths=tuple(col_widths), 
+                                  text_align=tuple(text_align)) 
         
         # 10. Guardar o Arquivo PDF
         nome_pdf = f"Relatorio_Analise_{ticker_alvo.upper()}_{ano}.pdf"
