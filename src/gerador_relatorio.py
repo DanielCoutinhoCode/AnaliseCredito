@@ -59,26 +59,26 @@ class GeradorRelatorioPDF:
         
         with pdf.table(
             col_widths=col_widths,
-            text_align="CENTER",  # Force center alignment for all cells
+            text_align="CENTER",
             first_row_as_headings=True,
             headings_style=estilo_cabecalho_tabela,
             line_height=1.5
         ) as tabela:
-            # Header row
+            # Write header
             row = tabela.row()
-            for cell in df_dados[0]:
-                row.cell(str(cell), align="CENTER")
+            for coluna in df_dados[0]:
+                row.cell(str(coluna))
             
-            # Data rows
+            # Write data rows
             for linha in df_dados[1:]:
                 row = tabela.row()
                 for valor in linha:
-                    # Format percentages and ensure all values are strings
+                    # Format percentage values
                     if isinstance(valor, float) and any(perc in str(valor) for perc in self.perc_traduzidos):
                         valor = f"{valor:.2%}"
                     elif isinstance(valor, float):
                         valor = f"{valor:.2f}"
-                    row.cell(str(valor), align="CENTER")
+                    row.cell(str(valor))
 
     def gerar_relatorio(self, ticker_alvo, ano, resultado_rating, lista_alertas, df_comparativo, df_completo_t):
         """
