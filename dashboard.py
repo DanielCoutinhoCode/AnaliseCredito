@@ -1,4 +1,4 @@
-# dashboard.py (Versão Final com Coleta de Dados)
+# dashboard.py (Versão Final com Injeção de Dependência)
 import streamlit as st
 import sys
 import os
@@ -11,7 +11,6 @@ sys.path.append(diretorio_src)
 
 # --- Importar as "fábricas" ---
 try:
-    # --- ADICIONADO O COLETOR ---
     from coleta_dados import ColetorDadosCVM 
     from gestor_cadastro import GestorCadastro
     from calculo_indicadores import CalculadoraIndicadores
@@ -27,8 +26,7 @@ except ImportError as e:
 # --- Fim da Configuração ---
 
 
-# --- OTIMIZAÇÃO DE CACHE DO STREAMLIT ---
-# (Adicionada a nova função de cache para o Coletor)
+# --- OTIMIZAÇÃO DE CACHE (COM INJEÇÃO DE DEPENDÊNCIA) ---
 
 @st.cache_resource
 def carregar_coletor_dados():
@@ -41,14 +39,21 @@ def carregar_gestor_cadastro():
     return GestorCadastro()
 
 @st.cache_resource
+# Esta calculadora agora PRECISA de um coletor
 def carregar_calculadora_indicadores():
     print("Iniciando CalculadoraIndicadores (cache)...")
-    return CalculadoraIndicadores()
+    coletor = carregar_coletor_dados() # Pega a instância do coletor
+    return CalculadoraIndicadores(coletor) # Injeta o coletor
 
 @st.cache_resource
+# Este analisador agora PRECISA da calculadora e do gestor
 def carregar_analisador_setorial():
+    print("Iniciando dependências (Calculadora, Gestor)...")
+    calculadora = carregar_calculadora_indicadores()
+    gestor = carregar_gestor_cadastro()
+    
     print("Iniciando AnalisadorSetorial (cache)...")
-    return AnalisadorSetorial()
+    return AnalisadorSetorial(calculadora, gestor) # Injeta as dependências
 
 @st.cache_resource
 def carregar_gerador_alertas():
@@ -62,7 +67,7 @@ def carregar_modelo_rating():
 # --- FIM DO CACHE ---
 
 
-# --- Funções "Helper" de Formatação ---
+# --- Funções "Helper" de Formatação (Sem alteração) ---
 def formatar_para_percentagem(valor):
     if pd.isna(valor): return "N/A"
     return f"{valor * 100:.2f}%"
@@ -72,7 +77,7 @@ def formatar_para_decimal(valor):
     return f"{valor:.2f}"
 
 
-# --- FUNÇÃO PRINCIPAL ATUALIZADA ---
+# --- FUNÇÃO PRINCIPAL (ATUALIZADA) ---
 def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
     """
     Função principal que executa todo o backend e
@@ -80,7 +85,8 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
     """
     # 1. Carregar as "fábricas" (a partir do cache)
     try:
-        coletor = carregar_coletor_dados() # <-- NOVO
+        # A Etapa 1 (Coleta) foi removida daqui,
+        # pois agora ela é chamada DE DENTRO do analisador.
         analisador = carregar_analisador_setorial()
         modelo = carregar_modelo_rating()
         alertas = carregar_gerador_alertas()
@@ -88,45 +94,36 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
         st.error(f"Erro ao iniciar as 'fábricas': {e}")
         return
 
-    # --- ETAPA 1 (NOVA): COLETAR DADOS BRUTOS ---
-    with st.spinner(f"[Etapa 1/4] Verificando/Baixando dados brutos da CVM para {ano}..."):
-        # Esta função é inteligente: ela só baixa se os arquivos não existirem
-        sucesso_coleta = coletor.baixar_demonstrativos(ano, tipo_doc="DFP")
-        
-        if not sucesso_coleta:
-            st.error(f"Falha na Etapa 1 (Coleta de Dados). A CVM pode estar offline ou o ano {ano} não está disponível.")
-            st.stop()
-        st.success("Etapa 1 concluída!")
-
-    # --- ETAPA 2 (ANTIGA 1): ANÁLISE SETORIAL ---
+    # --- ETAPA 1 (Antiga 2): ANÁLISE SETORIAL ---
     df_completo_t, df_comparativo, dados_alvo_brutos = None, None, None
-    with st.spinner(f"[Etapa 2/4] Calculando indicadores para {ticker_alvo} e {len(lista_pares)} pares..."):
+    with st.spinner(f"[Etapa 1/3] Verificando dados CVM e calculando indicadores..."):
+        # Esta função agora faz TUDO (Coleta, Cache, Cálculo, Fallback)
         resultados = analisador.analisar_pares(ticker_alvo, lista_pares, ano)
         
         if resultados[0] is None:
-            st.error(f"Falha na Etapa 2 (Análise Setorial). Verifique o terminal para mais detalhes (ex: dados faltantes da CVM).")
+            st.error(f"Falha na Etapa 1 (Análise Setorial). Verifique o terminal para mais detalhes (ex: dados faltantes da CVM).")
             st.stop()
             
         df_completo_t, df_comparativo, dados_alvo_brutos = resultados
-        st.success("Etapa 2 concluída!")
+        st.success("Etapa 1 concluída!")
 
-    # --- ETAPA 3 (ANTIGA 2): ANÁLISE QUALITATIVA (Red Flags) ---
+    # --- ETAPA 2 (Antiga 3): ANÁLISE QUALITATIVA (Red Flags) ---
     lista_alertas_resultado = None
-    with st.spinner("[Etapa 3/4] Gerando Alertas (vs. Média do Setor)..."):
+    with st.spinner("[Etapa 2/3] Gerando Alertas (vs. Média do Setor)..."):
         lista_alertas_resultado = alertas.gerar_alertas_setor(ticker_alvo, df_comparativo)
         if lista_alertas_resultado is None:
-            st.error("Falha na Etapa 3 (Geração de Alertas).")
+            st.error("Falha na Etapa 2 (Geração de Alertas).")
             st.stop()
-        st.success("Etapa 3 concluída!")
+        st.success("Etapa 2 concluída!")
 
-    # --- ETAPA 4 (ANTIGA 3): ANÁLISE QUANTITATIVA (Rating) ---
+    # --- ETAPA 3 (Antiga 4): ANÁLISE QUANTITATIVA (Rating) ---
     resultado_rating = None
-    with st.spinner("[Etapa 4/4] Calculando Rating de Crédito Absoluto..."):
+    with st.spinner("[Etapa 3/4] Calculando Rating de Crédito Absoluto..."):
         resultado_rating = modelo.calcular_rating_empresa(dados_alvo_brutos)
         if resultado_rating is None:
-            st.error("Falha na Etapa 4 (Cálculo do Rating).")
+            st.error("Falha na Etapa 3 (Cálculo do Rating).")
             st.stop()
-        st.success("Etapa 4 concluída!")
+        st.success("Etapa 3 concluída!")
         
     st.balloons() 
     
@@ -186,7 +183,7 @@ st.title("Sistema Automatizado de Análise de Crédito Corporativo")
 
 st.sidebar.header("Parâmetros da Análise")
 
-# --- LÓGICA DA BARRA LATERAL (SIMPLIFICADA) ---
+# --- LÓGICA DA BARRA LATERAL (Simplificada) ---
 try:
     gestor_global = carregar_gestor_cadastro()
     if not gestor_global._carregar_mapa_ticker():
@@ -208,7 +205,7 @@ try:
     
     pares_input = st.sidebar.text_area(
         "Pares Concorrentes (separados por vírgula)", 
-        value="PRIO3, RECV3, BRAV3" # Damos um exemplo
+        value="PRIO3, RECV3, BRAV3" 
     )
 
 except Exception as e:
@@ -230,7 +227,6 @@ if st.sidebar.button("Gerar Análise", type="primary"):
     elif not lista_pares:
         st.error("Por favor, insira pelo menos um Ticker na caixa 'Pares Concorrentes'.")
     else:
-        # Chama a função principal que executa o backend
         rodar_analise_dashboard(ticker_alvo, lista_pares, ano_input)
 
 else:
