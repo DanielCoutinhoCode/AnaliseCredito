@@ -14,6 +14,8 @@ class ColetorDadosCVM:
         
         os.makedirs(self.diretorio_saida_raw, exist_ok=True)
         print(f"ColetorDadosCVM iniciado. Saída em: {self.diretorio_saida_raw}")
+        # (Guardamos o caminho do zip para a outra classe o encontrar)
+        self.caminho_saida_zip = "" 
 
     # --- MÉTODO ATUALIZADO (NÃO DESCOMPACTA MAIS) ---
     def baixar_demonstrativos(self, ano, tipo_doc="DFP"):
@@ -24,6 +26,7 @@ class ColetorDadosCVM:
         
         url = f"{self.url_base}{tipo_doc.upper()}/DADOS/{tipo_doc.lower()}_cia_aberta_{ano}.zip"
         nome_arquivo_zip = f"{tipo_doc.lower()}_cia_aberta_{ano}.zip"
+        # Armazena o caminho do zip para a Calculadora poder encontrá-lo
         self.caminho_saida_zip = os.path.join(self.diretorio_saida_raw, nome_arquivo_zip)
         
         print(f"\nVerificando arquivo ZIP para {tipo_doc} {ano}...")
