@@ -1,0 +1,16 @@
+# Ignorar pastas de cache e ambiente do Python
+__pycache__/
+.ipynb_checkpoints/
+
+# Ignorar pastas de dados brutos (são baixados pelos scripts)
+data/raw/
+
+# Ignorar a pasta de saída (os relatórios são gerados)
+output/
+
+# --- CORREÇÃO AQUI ---
+# 1. Ignorar TODOS os arquivos na pasta 'processed' (os relatórios CSV)
+data/processed/*
+
+# 2. MAS, NÃO ignorar (o '!') o nosso mapa manual (que está nessa pasta)
+!data/processed/mapa_ticker_cnpj.csv
