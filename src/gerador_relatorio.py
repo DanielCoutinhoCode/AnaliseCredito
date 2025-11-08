@@ -55,28 +55,27 @@ class GeradorRelatorioPDF:
 
     def _escrever_tabela_pdf(self, pdf, df_dados, col_widths, text_align):
         pdf.set_font("Helvetica", size=10)
-        estilo_cabecalho_tabela = FontFace(emphasis="BOLD", align="CENTER")
+        estilo_cabecalho_tabela = FontFace(emphasis="BOLD")
         
-        table_style = {
-            "width": pdf.epw,
-            "align": "CENTER",
-            "line_height": 1.5,
-            "text_align": "CENTER"
-        }
+        # Calculate total width and center position
+        total_width = sum(col_widths)
+        margin_left = (pdf.epw - total_width) / 2
+
+        pdf.set_x(margin_left)
         
         with pdf.table(
             col_widths=col_widths,
-            width=table_style["width"],
-            align=table_style["align"],
+            line_height=6,
+            text_align="CENTER",
             first_row_as_headings=True,
-            headings_style=estilo_cabecalho_tabela,
-            line_height=table_style["line_height"],
-            text_align=table_style["text_align"]
+            headings_style=estilo_cabecalho_tabela
         ) as tabela:
             # Write header
             row = tabela.row()
             for coluna in df_dados[0]:
-                row.cell(str(coluna))
+                cell = row.cell(str(coluna))
+                cell.text_align = "CENTER"
+                cell.vertical_align = "MIDDLE"
             
             # Write data rows
             for linha in df_dados[1:]:
@@ -84,12 +83,17 @@ class GeradorRelatorioPDF:
                 for valor in linha:
                     if isinstance(valor, float):
                         if any(perc in str(valor) for perc in self.perc_traduzidos):
-                            valor = f"{valor:.2%}"
+                            texto = f"{valor:.2%}"
                         else:
-                            valor = f"{valor:.2f}"
-                    row.cell(str(valor))
-
-        pdf.ln(5)  # Add some space after the table
+                            texto = f"{valor:.2f}"
+                    else:
+                        texto = str(valor)
+                        
+                    cell = row.cell(texto)
+                    cell.text_align = "CENTER"
+                    cell.vertical_align = "MIDDLE"
+                    
+        pdf.ln(5)  # Add spacing after table
 
     def gerar_relatorio(self, ticker_alvo, ano, resultado_rating, lista_alertas, df_comparativo, df_completo_t):
         """
