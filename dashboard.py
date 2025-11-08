@@ -124,8 +124,6 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
             st.error("Falha na Etapa 3 (Cálculo do Rating).")
             st.stop()
         st.success("Etapa 3 concluída!")
-        
-    st.balloons() 
     
     # --- Exibir Resultados (Sem alteração aqui) ---
     

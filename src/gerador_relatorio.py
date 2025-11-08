@@ -128,7 +128,7 @@ class GeradorRelatorioPDF:
             dados_tabela_comp.append(linha_formatada)
         self._escrever_tabela_pdf(pdf, dados_tabela_comp, 
                                  col_widths=(60, 65, 65), 
-                                 text_align=("LEFT", "RIGHT", "RIGHT"))
+                                 text_align=("LEFT", "CENTER", "CENTER"))
         pdf.ln(10)
 
         # --- Seção 9 (Tabela Completa) - CORRIGIDA ---
@@ -168,7 +168,7 @@ class GeradorRelatorioPDF:
             
         # 5. Criar as listas de 'col_widths' e 'text_align' dinamicamente
         col_widths = [largura_primeira_coluna] + [largura_coluna_dados] * num_colunas_dados
-        text_align = ["LEFT"] + ["RIGHT"] * num_colunas_dados
+        text_align = ["LEFT"] + ["CENTER"] * num_colunas_dados
         
         # (Se houver muitas colunas, o texto do cabeçalho pode quebrar, 
         # mas o PDF não vai mais "crashar")
