@@ -159,7 +159,13 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
         else:
             df_comp_formatado.loc[idx] = df_comp_renomeado.loc[idx].apply(formatar_para_decimal)
     st.subheader(f"Comparativo: {ticker_alvo.upper()} vs. Média do Setor")
-    st.dataframe(df_comp_formatado) 
+    # Substituímos o st.dataframe(df_comp_formatado) por isto:
+    st.dataframe(
+        df_comp_formatado.style.set_properties(
+            subset=df_comp_formatado.columns, # Aplicar apenas às colunas de dados
+            **{'text-align': 'center'}
+        )
+    ) 
 
     df_completo_t_renomeado = df_completo_t.rename(index=TRADUCAO)
     df_completo_t_formatado = df_completo_t_renomeado.copy()
@@ -169,7 +175,13 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
         else:
             df_completo_t_formatado.loc[idx] = df_completo_t_renomeado.loc[idx].apply(formatar_para_decimal)
     with st.expander("Ver Indicadores Detalhados (Todos os Pares)"):
-        st.dataframe(df_completo_t_formatado)
+        # Substituímos o st.dataframe(df_completo_t_formatado) por isto:
+        st.dataframe(
+            df_completo_t_formatado.style.set_properties(
+                subset=df_completo_t_formatado.columns,
+                **{'text-align': 'center'}
+            )
+        )
 
 
 # ====================================================================
