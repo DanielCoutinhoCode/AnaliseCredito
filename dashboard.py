@@ -1,4 +1,4 @@
-# dashboard.py (Versão Ultra-Simplificada)
+# dashboard.py (Versão Final com Coleta de Dados)
 import streamlit as st
 import sys
 import os
@@ -11,6 +11,8 @@ sys.path.append(diretorio_src)
 
 # --- Importar as "fábricas" ---
 try:
+    # --- ADICIONADO O COLETOR ---
+    from coleta_dados import ColetorDadosCVM 
     from gestor_cadastro import GestorCadastro
     from calculo_indicadores import CalculadoraIndicadores
     from analise_setorial import AnalisadorSetorial
@@ -26,7 +28,13 @@ except ImportError as e:
 
 
 # --- OTIMIZAÇÃO DE CACHE DO STREAMLIT ---
-# (Estas funções "cache" são o coração da performance do app)
+# (Adicionada a nova função de cache para o Coletor)
+
+@st.cache_resource
+def carregar_coletor_dados():
+    print("Iniciando ColetorDadosCVM (cache)...")
+    return ColetorDadosCVM()
+
 @st.cache_resource
 def carregar_gestor_cadastro():
     print("Iniciando GestorCadastro (cache)...")
@@ -40,8 +48,6 @@ def carregar_calculadora_indicadores():
 @st.cache_resource
 def carregar_analisador_setorial():
     print("Iniciando AnalisadorSetorial (cache)...")
-    # O Analisador agora inicia as outras classes, 
-    # mas o cache garante que cada uma só rode uma vez.
     return AnalisadorSetorial()
 
 @st.cache_resource
@@ -66,14 +72,15 @@ def formatar_para_decimal(valor):
     return f"{valor:.2f}"
 
 
+# --- FUNÇÃO PRINCIPAL ATUALIZADA ---
 def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
     """
     Função principal que executa todo o backend e
     exibe os resultados na interface do Streamlit.
-    (Esta função não muda, está correta)
     """
     # 1. Carregar as "fábricas" (a partir do cache)
     try:
+        coletor = carregar_coletor_dados() # <-- NOVO
         analisador = carregar_analisador_setorial()
         modelo = carregar_modelo_rating()
         alertas = carregar_gerador_alertas()
@@ -81,40 +88,50 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
         st.error(f"Erro ao iniciar as 'fábricas': {e}")
         return
 
-    # --- ETAPA 1: ANÁLISE SETORIAL ---
+    # --- ETAPA 1 (NOVA): COLETAR DADOS BRUTOS ---
+    with st.spinner(f"[Etapa 1/4] Verificando/Baixando dados brutos da CVM para {ano}..."):
+        # Esta função é inteligente: ela só baixa se os arquivos não existirem
+        sucesso_coleta = coletor.baixar_demonstrativos(ano, tipo_doc="DFP")
+        
+        if not sucesso_coleta:
+            st.error(f"Falha na Etapa 1 (Coleta de Dados). A CVM pode estar offline ou o ano {ano} não está disponível.")
+            st.stop()
+        st.success("Etapa 1 concluída!")
+
+    # --- ETAPA 2 (ANTIGA 1): ANÁLISE SETORIAL ---
     df_completo_t, df_comparativo, dados_alvo_brutos = None, None, None
-    # (st.spinner mostra uma mensagem "rodando" enquanto o backend trabalha)
-    with st.spinner(f"[Etapa 1/3] Calculando indicadores para {ticker_alvo} e {len(lista_pares)} pares..."):
+    with st.spinner(f"[Etapa 2/4] Calculando indicadores para {ticker_alvo} e {len(lista_pares)} pares..."):
         resultados = analisador.analisar_pares(ticker_alvo, lista_pares, ano)
         
         if resultados[0] is None:
-            st.error(f"Falha na Etapa 1 (Análise Setorial). Verifique o terminal para mais detalhes (ex: dados faltantes da CVM).")
+            st.error(f"Falha na Etapa 2 (Análise Setorial). Verifique o terminal para mais detalhes (ex: dados faltantes da CVM).")
             st.stop()
             
         df_completo_t, df_comparativo, dados_alvo_brutos = resultados
-        st.success("Etapa 1 concluída!")
-
-    # --- ETAPA 2: ANÁLISE QUALITATIVA (Red Flags) ---
-    lista_alertas_resultado = None
-    with st.spinner("[Etapa 2/3] Gerando Alertas (vs. Média do Setor)..."):
-        lista_alertas_resultado = alertas.gerar_alertas_setor(ticker_alvo, df_comparativo)
-        if lista_alertas_resultado is None:
-            st.error("Falha na Etapa 2 (Geração de Alertas).")
-            st.stop()
         st.success("Etapa 2 concluída!")
 
-    # --- ETAPA 3: ANÁLISE QUANTITATIVA (Rating) ---
-    resultado_rating = None
-    with st.spinner("[Etapa 3/3] Calculando Rating de Crédito Absoluto..."):
-        resultado_rating = modelo.calcular_rating_empresa(dados_alvo_brutos)
-        if resultado_rating is None:
-            st.error("Falha na Etapa 3 (Cálculo do Rating).")
+    # --- ETAPA 3 (ANTIGA 2): ANÁLISE QUALITATIVA (Red Flags) ---
+    lista_alertas_resultado = None
+    with st.spinner("[Etapa 3/4] Gerando Alertas (vs. Média do Setor)..."):
+        lista_alertas_resultado = alertas.gerar_alertas_setor(ticker_alvo, df_comparativo)
+        if lista_alertas_resultado is None:
+            st.error("Falha na Etapa 3 (Geração de Alertas).")
             st.stop()
         st.success("Etapa 3 concluída!")
-   
-    # --- Exibir Resultados ---
+
+    # --- ETAPA 4 (ANTIGA 3): ANÁLISE QUANTITATIVA (Rating) ---
+    resultado_rating = None
+    with st.spinner("[Etapa 4/4] Calculando Rating de Crédito Absoluto..."):
+        resultado_rating = modelo.calcular_rating_empresa(dados_alvo_brutos)
+        if resultado_rating is None:
+            st.error("Falha na Etapa 4 (Cálculo do Rating).")
+            st.stop()
+        st.success("Etapa 4 concluída!")
+        
+    st.balloons() 
     
-    # 1. Secção de Rating
+    # --- Exibir Resultados (Sem alteração aqui) ---
+    
     st.header(f"Rating de Crédito (Absoluto) para {ticker_alvo.upper()}")
     col1, col2 = st.columns(2) 
     col1.metric("Rating Final", resultado_rating['rating'])
@@ -126,7 +143,6 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
     col2.metric("Endividamento", f"{detalhes['score_endividamento']:.0f}")
     col3.metric("Rentabilidade", f"{detalhes['score_rentabilidade']:.0f}")
 
-    # 2. Secção de Alertas
     st.header("Análise Qualitativa (vs. Média do Setor)")
     st.subheader("Conclusões e Sinais de Alerta")
     for alerta in lista_alertas_resultado:
@@ -135,13 +151,11 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
         elif "[GREEN FLAG]" in alerta:
             st.success(alerta)
             
-    # 3. Secção das Tabelas
     st.header("Análise Quantitativa Detalhada")
     
     TRADUCAO = config.TRADUCAO_INDICADORES
     PERC_TRADUZIDOS = [TRADUCAO.get(p) for p in config.INDICADORES_PERCENTUAIS]
 
-    # Formatar Tabela Comparativa
     df_comp_renomeado = df_comparativo.rename(index=TRADUCAO)
     df_comp_formatado = df_comp_renomeado.copy()
     for idx in df_comp_renomeado.index:
@@ -152,7 +166,6 @@ def rodar_analise_dashboard(ticker_alvo, lista_pares, ano):
     st.subheader(f"Comparativo: {ticker_alvo.upper()} vs. Média do Setor")
     st.dataframe(df_comp_formatado) 
 
-    # Formatar Tabela Completa
     df_completo_t_renomeado = df_completo_t.rename(index=TRADUCAO)
     df_completo_t_formatado = df_completo_t_renomeado.copy()
     for idx in df_completo_t_renomeado.index:
@@ -173,30 +186,43 @@ st.title("Sistema Automatizado de Análise de Crédito Corporativo")
 
 st.sidebar.header("Parâmetros da Análise")
 
-# --- LÓGICA DA BARRA LATERAL (ULTRA-SIMPLIFICADA) ---
-# Removemos toda a lógica de pré-carregamento do gestor.
-# O usuário agora digita o ticker que já conhece.
+# --- LÓGICA DA BARRA LATERAL (SIMPLIFICADA) ---
+try:
+    gestor_global = carregar_gestor_cadastro()
+    if not gestor_global._carregar_mapa_ticker():
+        raise Exception("Falha ao carregar o arquivo 'mapa_ticker_cnpj.csv'")
+    
+    lista_tickers = gestor_global.df_mapa_ticker['TICKER'].unique()
+    lista_tickers.sort()
+    
+    try:
+        default_index = list(lista_tickers).index("PETR4")
+    except ValueError:
+        default_index = 0 
+    
+    ticker_alvo = st.sidebar.selectbox(
+        "Ticker Alvo",
+        options=lista_tickers,
+        index=default_index
+    )
+    
+    pares_input = st.sidebar.text_area(
+        "Pares Concorrentes (separados por vírgula)", 
+        value="PRIO3, RECV3, BRAV3" # Damos um exemplo
+    )
 
-ticker_alvo = st.sidebar.text_input(
-    "Ticker Alvo", 
-    value="PETR4"
-)
+except Exception as e:
+    st.sidebar.error(f"Erro ao carregar mapa de tickers: {e}")
+    ticker_alvo = st.sidebar.text_input("Ticker Alvo", value="PETR4")
+    pares_input = st.sidebar.text_area("Pares Concorrentes (separados por vírgula)", value="PRIO3, RECV3, BRAV3")
 
-pares_input = st.sidebar.text_area(
-    "Pares Concorrentes (separados por vírgula)", 
-    value="PRIO3, RECV3, BRAV3" # Damos um exemplo
-)
-# --- FIM DA CORREÇÃO ---
-
-# Input do Ano
 ano_atual = datetime.now().year
-ano_input = st.sidebar.number_input("Ano de Análise", min_value=2010, max_value=ano_atual, value=ano_atual - 1) # Default para o ano passado
+ano_input = st.sidebar.number_input("Ano de Análise", min_value=2010, max_value=ano_atual, value=ano_atual - 1)
 
 
 # --- Botão de Execução ---
 if st.sidebar.button("Gerar Análise", type="primary"):
     
-    # Validação simples de input
     lista_pares = [ticker.strip().upper() for ticker in pares_input.split(',') if ticker.strip()]
     
     if not ticker_alvo.strip():
