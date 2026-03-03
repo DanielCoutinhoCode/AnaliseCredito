@@ -1,4 +1,5 @@
 Sistema Automatizado de Análise de Crédito Corporativo 
+
 Este projeto é um pipeline completo de análise de crédito em Python. Ele automatiza todo o fluxo de trabalho, desde a coleta de dados brutos da CVM até a geração de um relatório final com um rating de crédito e uma análise comparativa de pares do setor.
 
 Demo Interativa (Streamlit)
